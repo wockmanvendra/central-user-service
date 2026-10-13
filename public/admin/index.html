@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Central User Service · Admin</title>
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+  <!-- Sign in: mobile → email OTP (client admin-console) -->
+  <section id="login" class="login" hidden>
+    <form id="loginForm" class="card loginCard">
+      <h1>Central User Service</h1>
+      <p class="mut">Admin sign in</p>
+      <label>Mobile number <input id="loginMobile" inputmode="numeric" maxlength="14" autocomplete="tel" required /></label>
+      <label id="otpRow" hidden>OTP <input id="loginOtp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" /></label>
+      <p id="loginMsg" class="msg"></p>
+      <button id="loginBtn" type="submit">Send OTP</button>
+    </form>
+  </section>
+
+  <div id="app" class="app" hidden>
+    <header class="top">
+      <b>Central User Service</b>
+      <nav id="tabs">
+        <button data-tab="overview" class="on">Overview</button>
+        <button data-tab="users">Users</button>
+        <button data-tab="divisions">Divisions &amp; sync</button>
+        <button data-tab="clients">Client apps</button>
+        <button data-tab="history">Login history</button>
+      </nav>
+      <span class="who"><span id="whoName"></span> <button id="logout" class="link">Sign out</button></span>
+    </header>
+
+    <main>
+      <p id="flash" class="flash" hidden></p>
+
+      <section data-panel="overview">
+        <div id="kpis" class="kpis"></div>
+        <div class="card"><h2>Divisions</h2><table id="ovTable"></table></div>
+      </section>
+
+      <section data-panel="users" hidden>
+        <div class="toolbar">
+          <input id="uQ" type="search" placeholder="Search name, emp code, mobile, email, location…" />
+          <select id="uDivision"><option value="">All divisions</option></select>
+          <select id="uType">
+            <option value="">All roles</option><option value="nsm">NSM</option><option value="zsm">ZSM</option>
+            <option value="rm">RM</option><option value="tm">TM</option><option value="bu-head">BU Head</option><option value="admin">Admin</option>
+          </select>
+          <select id="uStatus"><option value="active">Active</option><option value="inactive">Inactive</option><option value="">All</option></select>
+          <button id="uAdd">+ Add user</button>
+        </div>
+        <div class="card"><p id="uCount" class="mut"></p><table id="uTable"></table><div id="uPager" class="pager"></div></div>
+      </section>
+
+      <section data-panel="divisions" hidden>
+        <div class="card">
+          <h2>Divisions</h2>
+          <p class="mut">"Sync from Synapse" reads Infinity's field structure from Azure Synapse (dbo.Field_Structure) and updates the accounts: people no longer in the structure are deactivated. "Sync from Infinity" uses the Infinity API instead (needs the division id). "Rebuild accounts" re-reads the stored structure only.</p>
+          <p><button id="syncAll">Sync all divisions from Synapse</button></p>
+          <table id="dTable"></table>
+          <form id="dForm" class="inline">
+            <input name="division_code" placeholder="Division code (e.g. 85)" required />
+            <input name="division_name" placeholder="Division name" required />
+            <input name="infinity_division_id" placeholder="Infinity division id (divsn…)" />
+            <button type="submit">Save division</button>
+          </form>
+        </div>
+        <div class="card"><h2>Sync history</h2><table id="sTable"></table></div>
+      </section>
+
+      <section data-panel="clients" hidden>
+        <div class="card">
+          <h2>Client apps</h2>
+          <p class="mut">Each project that signs field users in through this service. Its <b>client_id</b> is the token audience; the <b>API key</b> is for server-to-server calls (/api/v1) and is shown only once.</p>
+          <table id="cTable"></table>
+        </div>
+        <div class="card">
+          <h2 id="cFormTitle">Register a client app</h2>
+          <form id="cForm" class="grid">
+            <label>Client id <input name="client_id" placeholder="bionx-pulse" required /></label>
+            <label>App name (shown in the OTP email) <input name="name" placeholder="BIONX PULSE" required /></label>
+            <label>Allowed roles <input name="allowed_usertypes" value="nsm,zsm,rm,tm" /></label>
+            <label>Allowed divisions (blank = all) <input name="allowed_divisions" placeholder="85,A5" /></label>
+            <label>Browser origins (CORS) <input name="allowed_origins" placeholder="https://app.wockhardt.com" /></label>
+            <label>Token lifetime <input name="token_ttl" value="12h" /></label>
+            <div class="actions"><button type="submit" id="cSave">Register</button> <button type="button" id="cCancel" class="link" hidden>Cancel edit</button></div>
+          </form>
+        </div>
+      </section>
+
+      <section data-panel="history" hidden>
+        <div class="toolbar">
+          <input id="hQ" type="search" placeholder="Search name, mobile, emp code…" />
+          <select id="hClient"><option value="">All apps</option></select>
+          <select id="hStatus"><option value="">All</option><option value="success">Success</option><option value="failed">Failed</option></select>
+        </div>
+        <div class="card"><table id="hTable"></table></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Add / edit user -->
+  <dialog id="userDlg">
+    <form id="userForm" method="dialog" class="grid">
+      <h2 id="userDlgTitle">Add user</h2>
+      <p id="userDlgNote" class="mut"></p>
+      <label>Name <input name="name" required /></label>
+      <label>Role
+        <select name="usertype"><option value="tm">TM</option><option value="rm">RM</option><option value="zsm">ZSM</option><option value="nsm">NSM</option><option value="bu-head">BU Head (app staff)</option><option value="admin">Admin (app staff)</option></select>
+      </label>
+      <label>Division <select name="division_code"></select></label>
+      <label>Employee code <input name="empcode" /></label>
+      <label>Mobile <input name="mobileno" inputmode="numeric" required /></label>
+      <label>Email (OTP is sent here) <input name="email" type="email" required /></label>
+      <label>Location <input name="location" /></label>
+      <label>SAP code <input name="sap_code" /></label>
+      <label class="check"><input type="checkbox" name="is_service_admin" /> Service admin — may use this admin page</label>
+      <p id="userMsg" class="msg"></p>
+      <div class="actions"><button type="submit" value="save">Save</button> <button type="button" id="userCancel" class="link">Cancel</button></div>
+    </form>
+  </dialog>
+
+  <!-- API key shown once -->
+  <dialog id="keyDlg">
+    <h2>API key for <span id="keyClient"></span></h2>
+    <p>Copy it now and store it in that app's <code>.env</code> — it is not shown again.</p>
+    <pre id="keyValue" class="key"></pre>
+    <div class="actions"><button id="keyCopy">Copy</button> <button id="keyClose" class="link">Close</button></div>
+  </dialog>
+
+  <script src="admin.js"></script>
+</body>
+</html>

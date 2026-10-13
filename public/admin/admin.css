@@ -1,0 +1,61 @@
+:root {
+  --bg: #f3f7fb; --card: #fff; --ink: #15263a; --mut: #6d7f94; --line: #dbe5ef; --navy: #071b2e;
+  --blue: #1478ff; --good: #0b7a4d; --goodbg: #e3f6ee; --bad: #b3261e; --badbg: #fdeceb; --warnbg: #fff1d6; --warn: #8a5a00;
+}
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 "Segoe UI", Arial, sans-serif; }
+button { font: inherit; cursor: pointer; border: 0; border-radius: 8px; padding: 8px 14px; background: var(--blue); color: #fff; font-weight: 600; }
+button:disabled { opacity: .55; cursor: default; }
+button.link { background: none; color: var(--blue); padding: 4px 6px; }
+button.small { padding: 4px 9px; font-size: 12px; }
+button.ghost { background: #eaf2ff; color: #0b4fb3; }
+button.danger { background: var(--badbg); color: var(--bad); }
+input, select { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); min-width: 0; }
+label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--mut); }
+label.check { display: flex; align-items: center; gap: 8px; color: var(--ink); grid-column: 1 / -1; }
+h1 { margin: 0; font-size: 22px; } h2 { margin: 0 0 10px; font-size: 15px; }
+.mut { color: var(--mut); } .msg { min-height: 18px; margin: 0; color: var(--bad); font-size: 13px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; overflow-x: auto; }
+
+.login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.loginCard { width: min(380px, 100%); display: grid; gap: 12px; }
+
+.top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 10px 20px; background: var(--navy); color: #fff; }
+.top nav { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
+.top nav button { background: none; color: #a9bfd3; padding: 6px 10px; }
+.top nav button.on { background: #ffffff1f; color: #fff; }
+.who { font-size: 13px; color: #a9bfd3; } .who .link { color: #7fc0ff; }
+main { padding: 18px 20px; max-width: 1400px; margin: 0 auto; }
+.flash { padding: 10px 14px; border-radius: 10px; background: var(--goodbg); color: var(--good); font-weight: 600; }
+.flash.err { background: var(--badbg); color: var(--bad); }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.kpi { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.kpi small { display: block; color: var(--mut); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+.kpi b { font-size: 24px; }
+
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 11px; text-transform: uppercase; color: var(--mut); padding: 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 8px; border-bottom: 1px solid #edf1f5; vertical-align: top; }
+td.num, th.num { text-align: right; }
+td small { display: block; color: var(--mut); font-size: 12px; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.pill.good { background: var(--goodbg); color: var(--good); } .pill.bad { background: var(--badbg); color: var(--bad); }
+.pill.warn { background: var(--warnbg); color: var(--warn); } .pill.role { background: #eaf2ff; color: #0b4fb3; text-transform: uppercase; }
+
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.toolbar input[type=search] { flex: 1 1 260px; }
+.pager { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+.inline { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.inline input { flex: 1 1 180px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.grid h2, .grid .mut, .grid .msg, .grid .actions { grid-column: 1 / -1; }
+.actions { display: flex; gap: 8px; align-items: center; }
+
+dialog { border: 0; border-radius: 14px; padding: 20px; width: min(720px, calc(100% - 32px)); box-shadow: 0 20px 60px #071b2e40; }
+dialog::backdrop { background: #071b2e66; }
+pre.key { background: #f7f9fc; border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; user-select: all; }
+code { background: #f1f4f8; padding: 1px 5px; border-radius: 4px; }
+
+@media (max-width: 700px) { main { padding: 12px; } .top { padding: 10px 12px; } }
