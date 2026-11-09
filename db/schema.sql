@@ -56,6 +56,22 @@ ALTER TABLE users ADD CONSTRAINT users_usertype_check CHECK (usertype IN ('nsm',
 CREATE UNIQUE INDEX IF NOT EXISTS users_active_mobile_uq ON users (mobileno) WHERE is_active;
 CREATE INDEX IF NOT EXISTS users_division_idx ON users (division_code, usertype);
 
+-- ── Extra roles ──────────────────────────────────────────────────────────────
+-- A person may hold more than one role (e.g. RM in 85 and BU head of A8). The account's own
+-- usertype / division_code is the main role; each extra role here applies to the client apps it
+-- lists. The Infinity sync never touches this table.
+CREATE TABLE IF NOT EXISTS user_roles (
+    id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id        UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    usertype       VARCHAR(20)  NOT NULL CHECK (usertype IN ('nsm', 'zsm', 'rm', 'tm', 'bu-head', 'admin')),
+    division_code  VARCHAR(50)  NOT NULL REFERENCES divisions(division_code),
+    sap_code       VARCHAR(100),                        -- optional, e.g. 'WKI,WKC'; else the hierarchy by empcode
+    client_ids     TEXT[]       NOT NULL CHECK (cardinality(client_ids) > 0),
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    UNIQUE (user_id, usertype, division_code)
+);
+
 -- ── Client apps ──────────────────────────────────────────────────────────────
 -- Every project that signs users in through this service. The api key (stored as a
 -- SHA-256 hash) authenticates server-to-server calls (/api/v1/*); the login itself only

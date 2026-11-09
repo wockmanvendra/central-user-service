@@ -22,16 +22,24 @@ async function getClient(clientId) {
   return c && c.is_active ? c : null;
 }
 
-/** May this user sign in to / be read by this client? Returns an error message or null. */
+/** May this role (a usertype in a division) use this client? Returns an error message or null. */
+function roleDenied(client, role) {
+  if (!client.allowed_usertypes.includes(role.usertype)) return `${client.name} is not available for your role.`;
+  if (client.allowed_divisions.length && !client.allowed_divisions.includes(role.division_code)) {
+    return `${client.name} is not available for your division.`;
+  }
+  return null;
+}
+
+/**
+ * May this user sign in to / be read by this client on their main role? Returns an error message
+ * or null. Extra roles (user_roles) can still give access: see accessFor() in users.js.
+ */
 function clientDenies(client, user) {
   if (client.client_id === 'admin-console') {
     return user.is_service_admin ? null : 'This admin page is for service administrators only.';
   }
-  if (!client.allowed_usertypes.includes(user.usertype)) return `${client.name} is not available for your role.`;
-  if (client.allowed_divisions.length && !client.allowed_divisions.includes(user.division_code)) {
-    return `${client.name} is not available for your division.`;
-  }
-  return null;
+  return roleDenied(client, user);
 }
 
 /** New API key: 'cus_' + 40 random hex chars. Only its hash is stored. */
@@ -72,4 +80,4 @@ async function allowedOrigins() {
   return out;
 }
 
-module.exports = { getClient, allClients, invalidateClients, clientDenies, newApiKey, requireClientKey, allowedOrigins, sha256 };
+module.exports = { getClient, allClients, invalidateClients, clientDenies, roleDenied, newApiKey, requireClientKey, allowedOrigins, sha256 };

@@ -3,8 +3,8 @@
 const express = require('express');
 const db = require('../db');
 const { requireUser } = require('./auth');
-const { USERTYPES, normalizeMobile, USER_COLS } = require('../users');
-const { invalidateClients, newApiKey } = require('../clients');
+const { USERTYPES, normalizeMobile, USER_COLS, extraRolesOf } = require('../users');
+const { allClients, invalidateClients, newApiKey } = require('../clients');
 const { syncDivisionFromInfinity, syncDivisionFromSynapse, syncFromSynapse, rebuildUsers } = require('../sync');
 
 const router = express.Router();
@@ -12,6 +12,7 @@ const wrap = (fn) => (req, res, next) => fn(req, res, next).catch(next);
 const bad = (status, error) => Object.assign(new Error(error), { status });
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const str = (v) => (v === undefined || v === null ? null : String(v).trim() || null);
+const arr = (v) => (Array.isArray(v) ? v : String(v || '').split(',')).map((s) => String(s).trim()).filter(Boolean);
 
 router.use(requireUser({ audience: 'admin-console', serviceAdmin: true }));
 
@@ -62,7 +63,9 @@ router.get('/users', wrap(async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 100, 500);
   const offset = Math.max(Number(req.query.offset) || 0, 0);
   const { rows } = await db.query(
-    `SELECT ${USER_COLS}, u.disabled_by_admin, COUNT(*) OVER () AS total
+    `SELECT ${USER_COLS}, u.disabled_by_admin,
+            (SELECT COUNT(*) FROM user_roles r WHERE r.user_id = u.id)::int AS extra_roles,
+            COUNT(*) OVER () AS total
      FROM users u LEFT JOIN divisions d ON d.division_code = u.division_code
      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
      ORDER BY d.division_name NULLS FIRST, array_position(ARRAY['bu-head','admin','nsm','zsm','rm','tm'], u.usertype::text), u.name
@@ -133,6 +136,49 @@ router.patch('/users/:id', wrap(async (req, res) => {
   }
 }));
 
+// ── Extra roles ── A person's roles besides the main one, each for the client apps it lists.
+router.get('/users/:id/roles', wrap(async (req, res) => {
+  res.json({ roles: await extraRolesOf(req.params.id) });
+}));
+
+/** Replaces the user's extra roles: [{ usertype, division_code, sap_code, client_ids }]. */
+router.put('/users/:id/roles', wrap(async (req, res) => {
+  const { rows: [user] } = await db.query('SELECT id, usertype, division_code FROM users WHERE id = $1', [req.params.id]);
+  if (!user) throw bad(404, 'User not found.');
+  const given = Array.isArray((req.body || {}).roles) ? req.body.roles : [];
+  const apps = await allClients();
+  const seen = new Set([`${user.usertype}:${user.division_code}`]);
+  const roles = given.map((r, i) => {
+    const n = i + 1;
+    const usertype = str(r.usertype)?.toLowerCase();
+    const division = str(r.division_code);
+    if (!USERTYPES.includes(usertype)) throw bad(400, `Role ${n}: user type must be one of ${USERTYPES.join(', ')}.`);
+    if (!division) throw bad(400, `Role ${n}: division is required.`);
+    const key = `${usertype}:${division}`;
+    if (seen.has(key)) throw bad(400, `Role ${n} repeats the main role or another role (${usertype}, ${division}).`);
+    seen.add(key);
+    const clientIds = arr(r.client_ids);
+    if (!clientIds.length) throw bad(400, `Role ${n}: tick at least one app.`);
+    const unknown = clientIds.filter((c) => !apps.has(c) || c === 'admin-console');
+    if (unknown.length) throw bad(400, `Role ${n}: unknown app ${unknown.join(', ')}.`);
+    return { usertype, division, sap: str(r.sap_code), clientIds };
+  });
+  try {
+    await db.tx(async (c) => {
+      await c.query('DELETE FROM user_roles WHERE user_id = $1', [user.id]);
+      for (const r of roles) {
+        await c.query(
+          'INSERT INTO user_roles (user_id, usertype, division_code, sap_code, client_ids) VALUES ($1, $2, $3, $4, $5)',
+          [user.id, r.usertype, r.division, r.sap, r.clientIds]
+        );
+      }
+    });
+  } catch (err) {
+    throw friendly(err);
+  }
+  res.json({ saved: roles.length });
+}));
+
 // ── Divisions ──
 router.get('/divisions', wrap(async (req, res) => {
   res.json({ divisions: (await db.query('SELECT * FROM divisions ORDER BY division_name')).rows });
@@ -174,7 +220,6 @@ router.get('/sync-history', wrap(async (req, res) => {
 
 // ── Client apps ──
 const clientOut = ({ api_key_hash, ...c }) => ({ ...c, has_api_key: !!api_key_hash });
-const arr = (v) => (Array.isArray(v) ? v : String(v || '').split(',')).map((s) => String(s).trim()).filter(Boolean);
 const TTL_RE = /^\d+[smhd]$/;
 
 router.get('/clients', wrap(async (req, res) => {

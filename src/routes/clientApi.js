@@ -8,8 +8,8 @@
 const express = require('express');
 const db = require('../db');
 const { verifyToken } = require('../keys');
-const { requireClientKey, clientDenies } = require('../clients');
-const { findUser, profileOf, teamOf, USER_COLS } = require('../users');
+const { requireClientKey } = require('../clients');
+const { findUser, profileOf, accessFor, teamOf, USER_COLS } = require('../users');
 
 const router = express.Router();
 const wrap = (fn) => (req, res, next) => fn(req, res, next).catch(next);
@@ -36,8 +36,9 @@ router.post('/token/introspect', wrap(async (req, res) => {
   }
   const user = await findUser('u.id = $1', [payload.sub]);
   if (!user || !user.is_active) return res.json({ active: false, reason: 'inactive' });
-  if (clientDenies(req.client, user)) return res.json({ active: false, reason: 'not-allowed' });
-  res.json({ active: true, exp: payload.exp, user: await profileOf(user) });
+  const { roles, denied } = await accessFor(req.client, user);
+  if (denied) return res.json({ active: false, reason: 'not-allowed' });
+  res.json({ active: true, exp: payload.exp, user: await profileOf(user, roles) });
 }));
 
 router.get('/users', wrap(async (req, res) => {

@@ -2,6 +2,8 @@
 //   POST /api/auth/otp/request { client_id, mobileno }       -> emails a 6-digit OTP
 //   POST /api/auth/otp/verify  { client_id, mobileno, otp }  -> { token, user }   (RS256 JWT, aud = client_id)
 //   GET  /api/auth/me          Authorization: Bearer <token> -> current user (fails if deactivated)
+// A user's roles for the app (main role + extra roles ticked for it) are in `user.roles`; the
+// top-level usertype / division_code are the first of them.
 //   GET  /api/auth/public-key  -> PEM public key (also /.well-known/jwks.json)
 const crypto = require('crypto');
 const express = require('express');
@@ -10,8 +12,8 @@ const config = require('../config');
 const db = require('../db');
 const { signToken, verifyToken, loadKeys } = require('../keys');
 const { sendOtpEmail } = require('../mail');
-const { getClient, clientDenies, sha256 } = require('../clients');
-const { normalizeMobile, maskEmail, findUser, profileOf, USER_COLS } = require('../users');
+const { getClient, sha256 } = require('../clients');
+const { normalizeMobile, maskEmail, findUser, profileOf, accessFor, USER_COLS } = require('../users');
 const { recordLogin } = require('../loginHistory');
 
 const router = express.Router();
@@ -72,7 +74,7 @@ router.post('/otp/request', trustedApp, otpLimiter, wrap(async (req, res) => {
     log(null, 'failed', 'No active account');
     throw bad(404, 'No active account is registered with this mobile number. Contact your administrator.');
   }
-  const denied = clientDenies(client, user);
+  const { denied } = await accessFor(client, user);
   if (denied) {
     log(user, 'failed', denied);
     throw bad(403, denied);
@@ -132,7 +134,7 @@ router.post('/otp/verify', trustedApp, otpLimiter, wrap(async (req, res) => {
     log(null, 'failed', 'No active account');
     throw bad(404, 'No active account is registered with this mobile number.');
   }
-  const denied = clientDenies(client, user);
+  const { roles, denied } = await accessFor(client, user);
   if (denied) {
     log(user, 'failed', denied);
     throw bad(403, denied);
@@ -160,7 +162,7 @@ router.post('/otp/verify', trustedApp, otpLimiter, wrap(async (req, res) => {
      WHERE id = $1`,
     [user.id]
   );
-  const profile = await profileOf(user);
+  const profile = await profileOf(user, roles);
   const { id, ...claims } = profile;
   const token = signToken({ ...claims, sub: id }, { audience: client.client_id, expiresIn: client.token_ttl });
   const { exp, iat } = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
@@ -191,7 +193,9 @@ function requireUser({ audience, usertypes, serviceAdmin } = {}) {
 }
 
 router.get('/me', requireUser(), wrap(async (req, res) => {
-  res.json({ user: await profileOf(req.user), client_id: req.token.aud, expires_at: new Date(req.token.exp * 1000).toISOString() });
+  const client = await getClient(req.token.aud);
+  const roles = client ? (await accessFor(client, req.user)).roles : undefined;
+  res.json({ user: await profileOf(req.user, roles), client_id: req.token.aud, expires_at: new Date(req.token.exp * 1000).toISOString() });
 }));
 
 router.get('/public-key', (req, res) => {

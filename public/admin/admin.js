@@ -117,7 +117,7 @@
     $('#uTable').innerHTML = `<tr><th>Name</th><th>Role</th><th>Division</th><th>Mobile / email</th><th>Location</th><th>Status</th><th>Last login</th><th></th></tr>` +
       r.users.map((u, i) => `<tr>
         <td><b>${esc(u.name)}</b><small>${esc(u.empcode || '—')} · ${u.source}</small></td>
-        <td><span class="pill role">${ROLE[u.usertype] || u.usertype}</span>${u.is_service_admin ? ' <span class="pill warn" title="Can use this admin page">Service admin</span>' : ''}</td>
+        <td><span class="pill role">${ROLE[u.usertype] || u.usertype}</span>${u.extra_roles ? ` <span class="pill" title="Additional roles">+${u.extra_roles} role${u.extra_roles === 1 ? '' : 's'}</span>` : ''}${u.is_service_admin ? ' <span class="pill warn" title="Can use this admin page">Service admin</span>' : ''}</td>
         <td>${esc(u.division_name || '—')}</td>
         <td>${esc(u.mobileno)}<small>${esc(u.email || 'no email')}</small></td>
         <td>${esc(u.location || '—')}</td>
@@ -134,7 +134,7 @@
   $('#uPager').addEventListener('click', (e) => { const d = e.target.dataset.page; if (d) { uOffset = Math.max(0, uOffset + Number(d) * PAGE); loaders.users(); } });
   $('#uTable').addEventListener('click', guard(async (e) => {
     const t = e.target;
-    if (t.dataset.edit !== undefined) return openUser(uRows[t.dataset.edit]);
+    if (t.dataset.edit !== undefined) return await openUser(uRows[t.dataset.edit]);
     if (t.dataset.toggle !== undefined) {
       const u = uRows[t.dataset.toggle];
       if (u.is_active && !confirm(`Disable ${u.name}? They will not be able to sign in to any app.`)) return;
@@ -144,8 +144,33 @@
     }
   }));
 
+  // ── Additional roles (user dialog) ──
+  let appList = [];
+  const roleOpts = (sel) => Object.entries(ROLE).map(([v, l]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${l}</option>`).join('');
+  const divOpts = (sel) => '<option value="">Division…</option>' + divisions
+    .map((d) => `<option value="${esc(d.division_code)}"${d.division_code === sel ? ' selected' : ''}>${esc(d.division_name)} (${esc(d.division_code)})</option>`).join('');
+  function addRoleRow(r = {}) {
+    const row = document.createElement('div');
+    row.className = 'roleRow';
+    const ticked = new Set(r.client_ids || []);
+    row.innerHTML = `<select data-k="usertype" aria-label="Role">${roleOpts(r.usertype || 'bu-head')}</select>
+      <select data-k="division_code" aria-label="Division">${divOpts(r.division_code)}</select>
+      <input data-k="sap_code" placeholder="SAP codes (optional)" value="${esc(r.sap_code || '')}" />
+      <button type="button" class="small danger" data-remove>Remove</button>
+      <div class="apps">${appList.map((c) => `<label><input type="checkbox" value="${esc(c.client_id)}"${ticked.has(c.client_id) ? ' checked' : ''} /> ${esc(c.name)}</label>`).join('') || '<span class="mut">No client apps registered.</span>'}</div>`;
+    row.querySelector('[data-remove]').addEventListener('click', () => row.remove());
+    $('#rolesBox').append(row);
+  }
+  $('#roleAdd').addEventListener('click', () => addRoleRow());
+  const rolesInForm = () => [...document.querySelectorAll('#rolesBox .roleRow')].map((row) => ({
+    usertype: row.querySelector('[data-k=usertype]').value,
+    division_code: row.querySelector('[data-k=division_code]').value,
+    sap_code: row.querySelector('[data-k=sap_code]').value,
+    client_ids: [...row.querySelectorAll('.apps input:checked')].map((i) => i.value),
+  }));
+
   let editing = null;
-  function openUser(u) {
+  async function openUser(u) {
     editing = u || null;
     const f = $('#userForm');
     f.reset();
@@ -156,17 +181,23 @@
       : 'Field users normally come from the Infinity sync; add people by hand only if they are missing there.';
     if (u) for (const k of ['name', 'usertype', 'division_code', 'empcode', 'mobileno', 'email', 'location', 'sap_code']) f.elements[k].value = u[k] || '';
     f.elements.is_service_admin.checked = !!u?.is_service_admin;
+    $('#rolesBox').innerHTML = '';
+    appList = (await api('/api/admin/clients')).clients.filter((c) => c.is_active && c.client_id !== 'admin-console');
+    if (u) for (const r of (await api(`/api/admin/users/${u.id}/roles`)).roles) addRoleRow(r);
     $('#userDlg').showModal();
   }
-  $('#uAdd').addEventListener('click', () => openUser(null));
+  $('#uAdd').addEventListener('click', guard(() => openUser(null)));
   $('#userCancel').addEventListener('click', () => $('#userDlg').close());
   $('#userForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const body = Object.fromEntries(new FormData(e.target));
     body.is_service_admin = e.target.elements.is_service_admin.checked;
+    const roles = rolesInForm();
     try {
-      if (editing) await api(`/api/admin/users/${editing.id}`, { method: 'PATCH', body });
-      else await api('/api/admin/users', { method: 'POST', body });
+      let id = editing?.id;
+      if (editing) await api(`/api/admin/users/${id}`, { method: 'PATCH', body });
+      else id = (await api('/api/admin/users', { method: 'POST', body })).id;
+      await api(`/api/admin/users/${id}/roles`, { method: 'PUT', body: { roles } });
       $('#userDlg').close();
       flash(`${body.name} saved.`);
       loaders.users();

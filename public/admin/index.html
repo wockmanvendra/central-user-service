@@ -117,6 +117,12 @@
       <label>Location <input name="location" /></label>
       <label>SAP code <input name="sap_code" /></label>
       <label class="check"><input type="checkbox" name="is_service_admin" /> Service admin — may use this admin page</label>
+      <fieldset class="roles">
+        <legend>Additional roles</legend>
+        <p class="mut">Other roles this person holds, besides the one above. Each applies only to the apps ticked; an app that offers several roles lets the person choose (IBB Insights: after the OTP, and from the user menu).</p>
+        <div id="rolesBox"></div>
+        <button type="button" id="roleAdd" class="small ghost">+ Add role</button>
+      </fieldset>
       <p id="userMsg" class="msg"></p>
       <div class="actions"><button type="submit" value="save">Save</button> <button type="button" id="userCancel" class="link">Cancel</button></div>
     </form>

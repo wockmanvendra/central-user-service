@@ -1,5 +1,6 @@
 // User lookups shared by the login, client and admin APIs.
 const db = require('./db');
+const { clientDenies, roleDenied } = require('./clients');
 
 const FIELD_TYPES = ['nsm', 'zsm', 'rm', 'tm'];
 const STAFF_TYPES = ['bu-head', 'admin']; // division staff of an app (e.g. BIONX PULSE BU head / admin)
@@ -80,21 +81,72 @@ async function teamOf(user) {
   };
 }
 
-/** The user object returned by the APIs and carried in the token. */
-async function profileOf(user) {
+const roleKey = (r) => `${r.usertype}:${r.division_code || ''}`;
+const mainRole = (user) => ({
+  key: roleKey(user),
+  usertype: user.usertype,
+  division_code: user.division_code,
+  division_name: user.division_name || null,
+  sap_code: user.sap_code,
+  main: true,
+});
+
+/** The account's extra roles (user_roles), with the apps each applies to. */
+async function extraRolesOf(userId) {
+  const { rows } = await db.query(
+    `SELECT r.id, r.usertype, r.division_code, d.division_name, r.sap_code, r.client_ids
+       FROM user_roles r LEFT JOIN divisions d ON d.division_code = r.division_code
+      WHERE r.user_id = $1 ORDER BY r.created_at, r.usertype`,
+    [userId]
+  );
+  return rows;
+}
+
+/**
+ * The roles this user signs in to `client` with: the main role, then the extra roles ticked for
+ * the client — each kept only if the client allows it. No role: no access, and `denied` says why.
+ */
+async function accessFor(client, user) {
+  if (client.client_id === 'admin-console') {
+    const denied = clientDenies(client, user);
+    return { roles: denied ? [] : [mainRole(user)], denied };
+  }
+  const extra = (await extraRolesOf(user.id))
+    .filter((r) => r.client_ids.includes(client.client_id))
+    .map((r) => ({ key: roleKey(r), usertype: r.usertype, division_code: r.division_code, division_name: r.division_name || null, sap_code: r.sap_code, main: false }));
+  const roles = [mainRole(user), ...extra].filter((r) => !roleDenied(client, r));
+  return { roles, denied: roles.length ? null : clientDenies(client, user) };
+}
+
+/**
+ * The user object returned by the APIs and carried in the token. With `roles` (accessFor), the
+ * top-level usertype / division / sap_code are the first of them — the main role whenever the app
+ * allows it — so an app that reads only those sees one role it may serve; `roles` lists them all.
+ */
+async function profileOf(user, roles) {
+  const first = roles?.[0];
+  const u = first
+    ? { ...user, usertype: first.usertype, division_code: first.division_code, division_name: first.division_name, sap_code: first.sap_code }
+    : user;
   return {
-    id: user.id,
-    empcode: user.empcode,
-    name: user.name,
-    usertype: user.usertype,
-    division_code: user.division_code,
-    division_name: user.division_name || null,
-    mobileno: user.mobileno,
-    email: user.email,
-    location: user.location,
-    sap_code: user.sap_code,
-    managers: await managersOf(user),
+    id: u.id,
+    empcode: u.empcode,
+    name: u.name,
+    usertype: u.usertype,
+    division_code: u.division_code,
+    division_name: u.division_name || null,
+    mobileno: u.mobileno,
+    email: u.email,
+    location: u.location,
+    sap_code: u.sap_code,
+    // Apps may widen access for the service's own admins (IBB Insights: every division).
+    is_service_admin: u.is_service_admin === true,
+    managers: await managersOf(u),
+    ...(roles ? { roles } : {}),
   };
 }
 
-module.exports = { FIELD_TYPES, STAFF_TYPES, USERTYPES, normalizeMobile, maskEmail, findUser, managersOf, teamOf, profileOf, USER_COLS };
+module.exports = {
+  FIELD_TYPES, STAFF_TYPES, USERTYPES, normalizeMobile, maskEmail, findUser, managersOf, teamOf, profileOf,
+  accessFor, extraRolesOf, USER_COLS,
+};

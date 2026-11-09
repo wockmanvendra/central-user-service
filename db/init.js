@@ -38,7 +38,7 @@ async function main() {
   const c = new Client({ connectionString: url.toString(), connectionTimeoutMillis: 10000 });
   await c.connect();
   await c.query(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
-  console.log('Tables ready: divisions, users, clients, login_history, field_structure_infinity, sync_history');
+  console.log('Tables ready: divisions, users, user_roles, clients, login_history, field_structure_infinity, sync_history');
   console.log('Views ready:  vw_emp_email_mobile, vw_tm_hierarchy, vw_infinity_users');
 
   // 3. First service admin (signs in to /admin with an email OTP). An existing account with this
