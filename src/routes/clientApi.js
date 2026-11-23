@@ -5,10 +5,12 @@
 //   GET  /api/v1/users/:empcode              -> user with managers
 //   GET  /api/v1/users/:empcode/team         -> territories and people under them
 //   GET  /api/v1/hierarchy?division_code=    -> vw_tm_hierarchy rows (one per territory)
+//   GET  /api/v1/otps                        -> this app's live sign-in OTPs (needs OTP_ENCRYPTION_KEY)
 const express = require('express');
 const db = require('../db');
 const { verifyToken } = require('../keys');
 const { requireClientKey } = require('../clients');
+const otpVault = require('../otpVault');
 const { findUser, profileOf, accessFor, teamOf, USER_COLS } = require('../users');
 
 const router = express.Router();
@@ -77,6 +79,36 @@ router.get('/users/:empcode', wrap(async (req, res) => {
 router.get('/users/:empcode/team', wrap(async (req, res) => {
   const user = await scopedUser(req);
   res.json({ user: await profileOf(user), ...(await teamOf(user)) });
+}));
+
+// The live sign-in OTPs this app asked for, for its admins to read out when the email does not
+// arrive. Only the calling app's own OTPs, and only while they still work.
+router.get('/otps', wrap(async (req, res) => {
+  if (!otpVault.enabled()) return res.json({ enabled: false, otps: [] });
+  const { rows } = await db.query(
+    `SELECT u.empcode, u.name, u.usertype, u.mobileno, u.email, u.otp_encrypted, u.otp_expires_at, u.otp_sent_at, u.otp_attempts
+     FROM users u
+     WHERE u.otp_client_id = $1 AND u.otp_hash IS NOT NULL AND u.otp_encrypted IS NOT NULL AND u.otp_expires_at > NOW() AND u.is_active
+     ORDER BY u.otp_sent_at DESC NULLS LAST
+     LIMIT 500`,
+    [req.client.client_id]
+  );
+  res.json({
+    enabled: true,
+    otps: rows
+      .map((r) => ({
+        empcode: r.empcode,
+        name: r.name,
+        usertype: r.usertype,
+        mobileno: r.mobileno,
+        email: r.email,
+        otp: otpVault.open(r.otp_encrypted),
+        expires_at: r.otp_expires_at,
+        sent_at: r.otp_sent_at,
+        attempts: r.otp_attempts,
+      }))
+      .filter((o) => o.otp),
+  });
 }));
 
 router.get('/hierarchy', wrap(async (req, res) => {
