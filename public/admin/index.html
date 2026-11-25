@@ -110,7 +110,6 @@
       <label>Role
         <select name="usertype"><option value="tm">TM</option><option value="rm">RM</option><option value="zsm">ZSM</option><option value="nsm">NSM</option><option value="bu-head">BU Head (app staff)</option><option value="admin">Admin (app staff)</option></select>
       </label>
-      <label>Division <select name="division_code"></select></label>
       <label>Employee code <input name="empcode" /></label>
       <label>Mobile <input name="mobileno" inputmode="numeric" required /></label>
       <label>Email (OTP is sent here) <input name="email" type="email" required /></label>
@@ -118,10 +117,15 @@
       <label>SAP code <input name="sap_code" /></label>
       <label class="check"><input type="checkbox" name="is_service_admin" /> Service admin — may use this admin page</label>
       <fieldset class="roles">
-        <legend>Additional roles</legend>
-        <p class="mut">Other roles this person holds, besides the one above. Each applies only to the apps ticked; an app that offers several roles lets the person choose (IBB Insights: after the OTP, and from the user menu).</p>
-        <div id="rolesBox"></div>
-        <button type="button" id="roleAdd" class="small ghost">+ Add role</button>
+        <legend>Divisions</legend>
+        <p class="mut">Every division this person's single role (above) covers. The topmost ticked division becomes the account's primary one, shown everywhere and used by the Infinity sync; it stays available to any app that already allows this role/division.</p>
+        <div id="userDivisions" class="checkGroup"></div>
+        <p id="divWarn" class="mut warn" hidden></p>
+      </fieldset>
+      <fieldset class="roles">
+        <legend>Systems for the extra divisions</legend>
+        <p class="mut">Apps that may use this person in the divisions beyond the primary one. Not needed if only one division is ticked above.</p>
+        <div id="userApps" class="checkGroup"></div>
       </fieldset>
       <p id="userMsg" class="msg"></p>
       <div class="actions"><button type="submit" value="save">Save</button> <button type="button" id="userCancel" class="link">Cancel</button></div>
