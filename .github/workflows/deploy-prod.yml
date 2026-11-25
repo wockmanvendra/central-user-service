@@ -1,0 +1,50 @@
+# Deploys the production branch to users.wockregenerative.com, on the self-hosted runner that lives
+# on the production server (192.168.3.112). One-time setup: SETUP-RUNNER.md.
+#
+#   push to production       -> check + deploy
+#   Actions > Run workflow   -> dry run by default (checks only, changes nothing)
+#
+# The server keeps its own .env and signing key; no keys are stored in GitHub.
+name: Deploy production
+
+on:
+  push:
+    branches: [production]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Checks only (detect the app folder, check the server, list what would change)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# One deploy at a time; a push during a deploy waits for it instead of cancelling it.
+concurrency:
+  group: deploy-cus-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, cus-prod]
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # The server's own Node.js, not a downloaded one.
+      - name: Node.js 20+
+        run: |
+          node -e "if (+process.versions.node.split('.')[0] < 20) { console.error('Node.js 20+ is needed, found ' + process.version); process.exit(1) }"
+          echo "node $(node -v), npm $(npm -v)"
+
+      # There is no build step; a syntax error stops here, before the server is touched.
+      - name: Syntax check
+        run: for f in src/*.js src/routes/*.js db/*.js public/admin/*.js; do node --check "$f" || exit 1; done
+
+      - name: Deploy on this server
+        env:
+          PROD_APP_DIR: ${{ vars.PROD_APP_DIR }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: bash scripts/deploy-prod.sh "$GITHUB_WORKSPACE"

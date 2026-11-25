@@ -220,6 +220,9 @@ If it is lost, a new one is made on start and everybody has to sign in again in 
 
 ## Future updates
 
+Once the runner is set up (**SETUP-RUNNER.md**), an update is just `git push origin production`;
+the steps below are the manual fallback.
+
 1. **On your PC:** run `node scripts/make-deploy.cjs`. It keeps the production `.env` and signing key from the last build.
 2. **On the server:** upload the zip, then run **steps 2, 3, 4 and 5**. Step 4 keeps the server's signing key and the previous version.
 
