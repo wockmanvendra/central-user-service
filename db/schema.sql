@@ -59,10 +59,12 @@ ALTER TABLE users ADD CONSTRAINT users_usertype_check CHECK (usertype IN ('nsm',
 CREATE UNIQUE INDEX IF NOT EXISTS users_active_mobile_uq ON users (mobileno) WHERE is_active;
 CREATE INDEX IF NOT EXISTS users_division_idx ON users (division_code, usertype);
 
--- ── Extra roles ──────────────────────────────────────────────────────────────
--- A person may hold more than one role (e.g. RM in 85 and BU head of A8). The account's own
--- usertype / division_code is the main role; each extra role here applies to the client apps it
--- lists. The Infinity sync never touches this table.
+-- ── Extra divisions ──────────────────────────────────────────────────────────
+-- One role per user (the account's own usertype). A person may still cover more than one
+-- division under that single role; each extra division here applies only to the client apps it
+-- lists (the main division is available to any app that already allows this role/division).
+-- The admin API enforces usertype = users.usertype for every row. The Infinity sync never
+-- touches this table.
 CREATE TABLE IF NOT EXISTS user_roles (
     id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id        UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,

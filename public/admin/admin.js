@@ -88,7 +88,7 @@
     divisions = (await api('/api/admin/divisions')).divisions;
     const opts = divisions.map((d) => `<option value="${esc(d.division_code)}">${esc(d.division_name)} (${esc(d.division_code)})</option>`).join('');
     $('#uDivision').innerHTML = `<option value="">All divisions</option>${opts}`;
-    $('#userForm [name=division_code]').innerHTML = `<option value="">—</option>${opts}`;
+    renderDivisionChecks();
   }
 
   // ── Overview ──
@@ -144,30 +144,22 @@
     }
   }));
 
-  // ── Additional roles (user dialog) ──
+  // ── Divisions & systems (user dialog) ── One role per user (the Role field above); this
+  // picks every division that role covers, and which apps may use the person in the extra
+  // ones (the primary division stays open to any app that already allows the role/division).
   let appList = [];
-  const roleOpts = (sel) => Object.entries(ROLE).map(([v, l]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${l}</option>`).join('');
-  const divOpts = (sel) => '<option value="">Division…</option>' + divisions
-    .map((d) => `<option value="${esc(d.division_code)}"${d.division_code === sel ? ' selected' : ''}>${esc(d.division_name)} (${esc(d.division_code)})</option>`).join('');
-  function addRoleRow(r = {}) {
-    const row = document.createElement('div');
-    row.className = 'roleRow';
-    const ticked = new Set(r.client_ids || []);
-    row.innerHTML = `<select data-k="usertype" aria-label="Role">${roleOpts(r.usertype || 'bu-head')}</select>
-      <select data-k="division_code" aria-label="Division">${divOpts(r.division_code)}</select>
-      <input data-k="sap_code" placeholder="SAP codes (optional)" value="${esc(r.sap_code || '')}" />
-      <button type="button" class="small danger" data-remove>Remove</button>
-      <div class="apps">${appList.map((c) => `<label><input type="checkbox" value="${esc(c.client_id)}"${ticked.has(c.client_id) ? ' checked' : ''} /> ${esc(c.name)}</label>`).join('') || '<span class="mut">No client apps registered.</span>'}</div>`;
-    row.querySelector('[data-remove]').addEventListener('click', () => row.remove());
-    $('#rolesBox').append(row);
+  function renderDivisionChecks() {
+    $('#userDivisions').innerHTML = divisions
+      .map((d) => `<label><input type="checkbox" class="divChk" value="${esc(d.division_code)}" /> ${esc(d.division_name)} (${esc(d.division_code)})</label>`)
+      .join('') || '<span class="mut">No divisions set up.</span>';
   }
-  $('#roleAdd').addEventListener('click', () => addRoleRow());
-  const rolesInForm = () => [...document.querySelectorAll('#rolesBox .roleRow')].map((row) => ({
-    usertype: row.querySelector('[data-k=usertype]').value,
-    division_code: row.querySelector('[data-k=division_code]').value,
-    sap_code: row.querySelector('[data-k=sap_code]').value,
-    client_ids: [...row.querySelectorAll('.apps input:checked')].map((i) => i.value),
-  }));
+  function renderAppChecks() {
+    $('#userApps').innerHTML = appList
+      .map((c) => `<label><input type="checkbox" class="appChk" value="${esc(c.client_id)}" /> ${esc(c.name)}</label>`)
+      .join('') || '<span class="mut">No client apps registered.</span>';
+  }
+  const checkedDivisions = () => [...document.querySelectorAll('#userDivisions .divChk:checked')].map((el) => el.value);
+  const checkedApps = () => [...document.querySelectorAll('#userApps .appChk:checked')].map((el) => el.value);
 
   let editing = null;
   async function openUser(u) {
@@ -175,15 +167,32 @@
     const f = $('#userForm');
     f.reset();
     $('#userMsg').textContent = '';
+    $('#divWarn').hidden = true;
     $('#userDlgTitle').textContent = u ? `Edit ${u.name}` : 'Add user';
     $('#userDlgNote').textContent = u && u.source === 'infinity'
       ? 'This account comes from Infinity: the next sync overwrites name, role, division, mobile, email and location. Change them in Infinity for a lasting fix.'
       : 'Field users normally come from the Infinity sync; add people by hand only if they are missing there.';
-    if (u) for (const k of ['name', 'usertype', 'division_code', 'empcode', 'mobileno', 'email', 'location', 'sap_code']) f.elements[k].value = u[k] || '';
+    if (u) for (const k of ['name', 'usertype', 'empcode', 'mobileno', 'email', 'location', 'sap_code']) f.elements[k].value = u[k] || '';
     f.elements.is_service_admin.checked = !!u?.is_service_admin;
-    $('#rolesBox').innerHTML = '';
     appList = (await api('/api/admin/clients')).clients.filter((c) => c.is_active && c.client_id !== 'admin-console');
-    if (u) for (const r of (await api(`/api/admin/users/${u.id}/roles`)).roles) addRoleRow(r);
+    renderDivisionChecks();
+    renderAppChecks();
+
+    const checkedDivs = new Set(u?.division_code ? [u.division_code] : []);
+    const apps = new Set();
+    const mismatched = [];
+    if (u) {
+      for (const r of (await api(`/api/admin/users/${u.id}/roles`)).roles) {
+        if (r.usertype === u.usertype) { checkedDivs.add(r.division_code); for (const c of r.client_ids || []) apps.add(c); }
+        else mismatched.push(r);
+      }
+    }
+    for (const el of document.querySelectorAll('#userDivisions .divChk')) el.checked = checkedDivs.has(el.value);
+    for (const el of document.querySelectorAll('#userApps .appChk')) el.checked = apps.has(el.value);
+    if (mismatched.length) {
+      $('#divWarn').hidden = false;
+      $('#divWarn').textContent = `This account also has ${mismatched.length} division(s) under a different role (${mismatched.map((r) => `${ROLE[r.usertype] || r.usertype} in ${r.division_code}`).join(', ')}) from before one role per user was enforced. Saving here keeps only the role above, so those will be removed.`;
+    }
     $('#userDlg').showModal();
   }
   $('#uAdd').addEventListener('click', guard(() => openUser(null)));
@@ -192,7 +201,14 @@
     e.preventDefault();
     const body = Object.fromEntries(new FormData(e.target));
     body.is_service_admin = e.target.elements.is_service_admin.checked;
-    const roles = rolesInForm();
+    const checked = checkedDivisions();
+    if (!checked.length && !body.is_service_admin) { $('#userMsg').textContent = 'Tick at least one division (only a service admin may have none).'; return; }
+    const primary = checked.length ? ((editing && checked.includes(editing.division_code)) ? editing.division_code : checked[0]) : null;
+    body.division_code = primary;
+    const others = checked.filter((d) => d !== primary);
+    const apps = checkedApps();
+    if (others.length && !apps.length) { $('#userMsg').textContent = 'Tick at least one system for the additional division(s).'; return; }
+    const roles = others.map((division_code) => ({ usertype: body.usertype, division_code, sap_code: body.sap_code, client_ids: apps }));
     try {
       let id = editing?.id;
       if (editing) await api(`/api/admin/users/${id}`, { method: 'PATCH', body });

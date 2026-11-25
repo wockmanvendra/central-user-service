@@ -136,31 +136,35 @@ router.patch('/users/:id', wrap(async (req, res) => {
   }
 }));
 
-// ── Extra roles ── A person's roles besides the main one, each for the client apps it lists.
+// ── Extra divisions ── A person's one role, in divisions besides the main one, each for the client apps it lists.
 router.get('/users/:id/roles', wrap(async (req, res) => {
   res.json({ roles: await extraRolesOf(req.params.id) });
 }));
 
-/** Replaces the user's extra roles: [{ usertype, division_code, sap_code, client_ids }]. */
+/**
+ * Replaces the user's extra divisions: [{ usertype, division_code, sap_code, client_ids }].
+ * One role per user: every entry must use the account's own usertype (its single role) —
+ * it only adds the division, scoped to the apps ticked for it.
+ */
 router.put('/users/:id/roles', wrap(async (req, res) => {
   const { rows: [user] } = await db.query('SELECT id, usertype, division_code FROM users WHERE id = $1', [req.params.id]);
   if (!user) throw bad(404, 'User not found.');
   const given = Array.isArray((req.body || {}).roles) ? req.body.roles : [];
   const apps = await allClients();
-  const seen = new Set([`${user.usertype}:${user.division_code}`]);
+  const seen = new Set([String(user.division_code)]);
   const roles = given.map((r, i) => {
     const n = i + 1;
     const usertype = str(r.usertype)?.toLowerCase();
     const division = str(r.division_code);
-    if (!USERTYPES.includes(usertype)) throw bad(400, `Role ${n}: user type must be one of ${USERTYPES.join(', ')}.`);
-    if (!division) throw bad(400, `Role ${n}: division is required.`);
-    const key = `${usertype}:${division}`;
-    if (seen.has(key)) throw bad(400, `Role ${n} repeats the main role or another role (${usertype}, ${division}).`);
-    seen.add(key);
+    if (!USERTYPES.includes(usertype)) throw bad(400, `Division ${n}: user type must be one of ${USERTYPES.join(', ')}.`);
+    if (usertype !== user.usertype) throw bad(400, `Division ${n}: must use the account's own role (${user.usertype}) — a user has only one role.`);
+    if (!division) throw bad(400, `Division ${n}: division is required.`);
+    if (seen.has(division)) throw bad(400, `Division ${n} repeats the main division or another one (${division}).`);
+    seen.add(division);
     const clientIds = arr(r.client_ids);
-    if (!clientIds.length) throw bad(400, `Role ${n}: tick at least one app.`);
+    if (!clientIds.length) throw bad(400, `Division ${n}: tick at least one system.`);
     const unknown = clientIds.filter((c) => !apps.has(c) || c === 'admin-console');
-    if (unknown.length) throw bad(400, `Role ${n}: unknown app ${unknown.join(', ')}.`);
+    if (unknown.length) throw bad(400, `Division ${n}: unknown app ${unknown.join(', ')}.`);
     return { usertype, division, sap: str(r.sap_code), clientIds };
   });
   try {
