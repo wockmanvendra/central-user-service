@@ -45,6 +45,6 @@ jobs:
 
       - name: Deploy on this server
         env:
-          PROD_APP_DIR: ${{ vars.PROD_APP_DIR }}
+          PROD_APP_DIR: ${{ vars.PROD_APP_DIR || '/var/www/html/central-user-service' }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         run: bash scripts/deploy-prod.sh "$GITHUB_WORKSPACE"
