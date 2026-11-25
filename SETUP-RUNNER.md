@@ -1,7 +1,7 @@
 # Automatic production deploy: setup on 192.168.3.112
 
 After this setup, **pushing to the `production` branch deploys the Central User Service by itself**.
-A second GitHub Actions runner on the production server (next to Regen's `regen-prod-112`) does the work:
+A GitHub Actions runner on the production server, registered to this repository only, does the work:
 
 1. checks the code (syntax);
 2. backs up the database (`central_user_db`) and the app folder, including `.env` and the signing key;
@@ -19,12 +19,12 @@ The server keeps its own `.env` and `keys/`. No keys or passwords are stored in 
 | User that runs pm2 (and the runner) | `root` |
 | pm2 daemon | 6.0.13: `/root/.nvm/versions/node/v20.19.5/bin/pm2` |
 | `central-user-service` | folder `/var/www/html/central-user-service`, port 5020 |
-| Database | `central_user_db` on 192.168.1.76 (PostgreSQL 17; `pg_dump` 17 is installed for Regen) |
+| Database | `central_user_db` on 192.168.1.76 (PostgreSQL 17; backups use `/usr/lib/postgresql/17/bin/pg_dump`) |
 | Backups | `/var/backups/central-user-service/<date>-<commit>/`, root only, last 10 kept |
 
 ## 1. GitHub runner
 
-A runner serves one repository, so this one is separate from Regen's (`/root/actions-runner`).
+The runner lives in `/root/actions-runner-cus` and serves this repository only.
 
 1. In GitHub open **central-user-service → Settings → Actions → Runners → New self-hosted runner** (Linux, x64).
 2. Copy the token from the `./config.sh` line on that page. It expires after an hour.
@@ -32,10 +32,8 @@ A runner serves one repository, so this one is separate from Regen's (`/root/act
 
 ```bash
 mkdir -p /root/actions-runner-cus && cd /root/actions-runner-cus
-TGZ=$(ls /root/actions-runner/actions-runner-linux-x64-*.tar.gz 2>/dev/null | tail -1)
-if [ -n "$TGZ" ]; then tar xzf "$TGZ"; else
-  curl -fsSL -o runner.tgz https://github.com/actions/runner/releases/download/v2.338.2/actions-runner-linux-x64-2.338.2.tar.gz && tar xzf runner.tgz && rm runner.tgz
-fi
+curl -fsSL -o runner.tgz https://github.com/actions/runner/releases/download/v2.338.2/actions-runner-linux-x64-2.338.2.tar.gz \
+  && tar xzf runner.tgz && rm runner.tgz
 export RUNNER_ALLOW_RUNASROOT=1                       # pm2 runs as root, so the runner must too
 export PATH=/root/.nvm/versions/node/v24.15.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ./config.sh --url https://github.com/wockmanvendra/central-user-service --token <TOKEN> \
@@ -47,7 +45,7 @@ EOF
 ./svc.sh install root && ./svc.sh start && ./svc.sh status
 ```
 
-GitHub then shows the runner **cus-prod-112** as *Idle*. Regen's runner is not affected.
+GitHub then shows the runner **cus-prod-112** as *Idle*.
 
 The runner takes its `PATH` from `.path`, which `config.sh` writes from the shell above, so `node`
 is Node 24. If Node or pm2 change later, edit `.path` / `.env` and run `./svc.sh stop && ./svc.sh start`.
@@ -57,19 +55,21 @@ is Node 24. If Node or pm2 change later, edit `.path` / `.env` and run `./svc.sh
 1. **Settings → Environments → New environment → `production`.**
    - Under *Deployment branches*, choose *Selected branches* and add `production`.
    - Optional: under *Required reviewers*, add yourself. Each deploy then waits for your **Approve**.
-2. **Settings → Secrets and variables → Actions → Variables.** Add:
-   - `PROD_APP_DIR` = `/var/www/html/central-user-service`
+2. Optional: **Settings → Secrets and variables → Actions → Variables** → `PROD_APP_DIR`. Without
+   it the workflow uses `/var/www/html/central-user-service`.
 
-The deploy finds the folder again on every run, from pm2. If it doesn't match the variable, it
-stops **before changing anything** and prints what it found.
+The deploy finds the folder again on every run, from pm2. If it doesn't match, it stops **before
+changing anything** and prints what it found.
 
-## 3. First run: dry run
+## 3. Dry run
 
-The *Run workflow* button appears once the workflow file is on the default branch (`main`).
-**Actions → Deploy production → Run workflow**, on branch `production`. *Dry run* is ticked by
-default: it checks the server and lists the files that would change, without changing anything.
-Read that list before the first real deploy: files only on the server are removed (except `.env`,
-`keys/`, `logs/` and `apache/`).
+Checks the server and lists the files that would change, without changing anything. Files only on
+the server are removed by a real run (except `.env`, `keys/`, `logs/` and `apache/`).
+
+- **On the server**, from a copy of the branch: `DRY_RUN=true PROD_APP_DIR=/var/www/html/central-user-service
+  PM2_BIN=/root/.nvm/versions/node/v20.19.5/bin/pm2 bash scripts/deploy-prod.sh <folder>`
+- **In GitHub** (once the workflow file is also on `main`): **Actions → Deploy production → Run
+  workflow** on branch `production`; *Dry run* is ticked by default.
 
 ---
 
@@ -91,7 +91,7 @@ Follow it in **Actions → Deploy production**:
 | Copy files, `pm2 reload central-user-service`, health on port 5020, signing key unchanged | The previous version is put back and reloaded |
 
 It never changes `.env`, `keys/`, `logs/`, `apache/`, Apache or pm2 configuration, or the other
-apps on this server (BIONX PULSE, Regen).
+apps on this server.
 
 **The database is not rolled back automatically.** To put it back as it was before a deploy:
 
