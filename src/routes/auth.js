@@ -15,6 +15,7 @@ const { sendOtpEmail } = require('../mail');
 const { getClient, sha256 } = require('../clients');
 const { normalizeMobile, maskEmail, findUser, profileOf, accessFor, USER_COLS } = require('../users');
 const { recordLogin } = require('../loginHistory');
+const otpVault = require('../otpVault');
 
 const router = express.Router();
 const bad = (status, error) => Object.assign(new Error(error), { status });
@@ -92,8 +93,8 @@ router.post('/otp/request', trustedApp, otpLimiter, wrap(async (req, res) => {
   const otp = String(crypto.randomInt(100000, 1000000));
   await db.query(
     `UPDATE users SET otp_hash = $1, otp_client_id = $2, otp_expires_at = NOW() + make_interval(mins => $3),
-            otp_attempts = 0, otp_sent_at = NOW() WHERE id = $4`,
-    [otpHash(user.id, otp), client.client_id, config.otp.expiryMinutes, user.id]
+            otp_attempts = 0, otp_sent_at = NOW(), otp_encrypted = $5 WHERE id = $4`,
+    [otpHash(user.id, otp), client.client_id, config.otp.expiryMinutes, user.id, otpVault.seal(otp)]
   );
 
   if (config.otp.delivery === 'console') {
@@ -102,7 +103,7 @@ router.post('/otp/request', trustedApp, otpLimiter, wrap(async (req, res) => {
     try {
       await sendOtpEmail({ to: user.email, name: user.name, otp, appName: client.name, expiryMinutes: config.otp.expiryMinutes });
     } catch (err) {
-      await db.query('UPDATE users SET otp_hash = NULL, otp_expires_at = NULL, otp_sent_at = NULL WHERE id = $1', [user.id]);
+      await db.query('UPDATE users SET otp_hash = NULL, otp_encrypted = NULL, otp_expires_at = NULL, otp_sent_at = NULL WHERE id = $1', [user.id]);
       log(user, 'failed', `Email failed: ${err.message}`);
       throw bad(502, 'Could not send the OTP email. Please try again or contact your administrator.');
     }
@@ -148,7 +149,8 @@ router.post('/otp/verify', trustedApp, otpLimiter, wrap(async (req, res) => {
     // Too many wrong tries cancel the OTP, so it cannot be guessed.
     const { rows: [r] } = await db.query(
       `UPDATE users SET otp_attempts = otp_attempts + 1,
-              otp_hash = CASE WHEN otp_attempts + 1 >= $2 THEN NULL ELSE otp_hash END
+              otp_hash = CASE WHEN otp_attempts + 1 >= $2 THEN NULL ELSE otp_hash END,
+              otp_encrypted = CASE WHEN otp_attempts + 1 >= $2 THEN NULL ELSE otp_encrypted END
        WHERE id = $1 RETURNING otp_attempts`,
       [user.id, config.otp.maxAttempts]
     );
@@ -158,7 +160,7 @@ router.post('/otp/verify', trustedApp, otpLimiter, wrap(async (req, res) => {
   }
 
   await db.query(
-    `UPDATE users SET otp_hash = NULL, otp_client_id = NULL, otp_expires_at = NULL, otp_attempts = 0, last_login_at = NOW()
+    `UPDATE users SET otp_hash = NULL, otp_encrypted = NULL, otp_client_id = NULL, otp_expires_at = NULL, otp_attempts = 0, last_login_at = NOW()
      WHERE id = $1`,
     [user.id]
   );

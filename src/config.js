@@ -19,6 +19,9 @@ const config = {
     // email = send the OTP by email (production). console = print it in the service log only
     // (local testing — no mail reaches real field users).
     delivery: process.env.OTP_DELIVERY === 'console' ? 'console' : 'email',
+    // 32 bytes, base64. When set, a live OTP is also kept encrypted so client apps can show it to
+    // their admins (GET /api/v1/otps). Empty = only the hash is kept, as before.
+    encryptionKey: process.env.OTP_ENCRYPTION_KEY ? Buffer.from(process.env.OTP_ENCRYPTION_KEY, 'base64') : null,
   },
 
   smtp: {
@@ -42,5 +45,8 @@ const config = {
 };
 
 if (!config.databaseUrl) throw new Error('DATABASE_URL is required (see .env.example)');
+if (config.otp.encryptionKey && config.otp.encryptionKey.length !== 32) {
+  throw new Error('OTP_ENCRYPTION_KEY must be 32 bytes in base64 (node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64\'))")');
+}
 
 module.exports = config;

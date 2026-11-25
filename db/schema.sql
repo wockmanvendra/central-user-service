@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS users (
     is_active      BOOLEAN      NOT NULL DEFAULT TRUE,
     disabled_by_admin BOOLEAN   NOT NULL DEFAULT FALSE,     -- an admin switched the account off: the Infinity sync keeps it off
     is_service_admin  BOOLEAN   NOT NULL DEFAULT FALSE,     -- may use this service's admin page (any role)
-    -- OTP state: only a SHA-256 hash is stored, bound to the client app that asked for it.
+    -- OTP state: a SHA-256 hash checks the code, bound to the client app that asked for it
+    -- (and, with OTP_ENCRYPTION_KEY, an encrypted copy in otp_encrypted while the OTP is live).
     otp_hash       VARCHAR(64),
     otp_client_id  VARCHAR(60),
     otp_expires_at TIMESTAMPTZ,
@@ -49,6 +50,8 @@ CREATE TABLE IF NOT EXISTS users (
 -- A mobile number identifies one active account (inactive accounts may keep an old number).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled_by_admin BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_service_admin BOOLEAN NOT NULL DEFAULT FALSE;
+-- A live OTP, encrypted (src/otpVault.js), for client apps' admins; cleared whenever otp_hash is.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_encrypted TEXT;
 -- Earlier versions: usertype 'admin' without a division meant the service admin.
 UPDATE users SET is_service_admin = TRUE WHERE usertype = 'admin' AND division_code IS NULL AND NOT is_service_admin;
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_usertype_check;
