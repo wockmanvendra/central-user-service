@@ -76,7 +76,7 @@ fi
 step "Checks"
 ENV_FILE=$LIVE/.env
 [ -f "$ENV_FILE" ] || fail "$ENV_FILE is missing"
-envval() { grep -E "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '\r' | sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/'; }
+envval() { { grep -E "^$1=" "$ENV_FILE" || true; } | tail -1 | cut -d= -f2- | tr -d '\r' | sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/'; }
 PORT=$(envval PORT); PORT=${PORT:-$PORT_DEFAULT}
 DATABASE_URL=$(envval DATABASE_URL)
 [ -n "$DATABASE_URL" ] || fail "DATABASE_URL is missing from $ENV_FILE"
